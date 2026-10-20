@@ -11,16 +11,21 @@ const prisma = new PrismaClient({
   adapter
 });
 
+// =========================
+// REGISTER
+// =========================
 const register = async (req, res) => {
   try {
     const { username, fullname, password } = req.body;
 
+    // 1. Kiểm tra dữ liệu đầu vào
     if (!username || !fullname || !password) {
       return res.status(400).json({
         message: "Username, fullname and password are required"
       });
     }
 
+    // 2. Kiểm tra username đã tồn tại chưa
     const existingUser = await prisma.user.findFirst({
       where: {
         username: username
@@ -33,46 +38,65 @@ const register = async (req, res) => {
       });
     }
 
-    const customerRole = await prisma.role.findFirst({
+    // 3. Tìm role mặc định = normal
+    const normalRole = await prisma.role.findFirst({
       where: {
         rolename: "normal"
       }
     });
 
+    // 4. Tìm membership mặc định = BRONZE
     const bronzeMembership = await prisma.memberShip.findFirst({
       where: {
         mname: "BRONZE"
       }
     });
 
-    if (!customerRole || !bronzeMembership) {
+    if (!normalRole || !bronzeMembership) {
       return res.status(500).json({
         message: "Default Role or MemberShip not found"
       });
     }
 
+    // 5. Hash password bằng bcrypt
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // 6. Tạo User mới
     const newUser = await prisma.user.create({
       data: {
         username: username,
         fullname: fullname,
         password: hashedPassword,
-        roleid: customerRole.roleid,
+        roleid: normalRole.roleid,
         mid: bronzeMembership.mid
       },
       select: {
         uid: true,
         username: true,
         fullname: true,
-        roleid: true,
-        mid: true
+        role: {
+          select: {
+            rolename: true
+          }
+        },
+        membership: {
+          select: {
+            score: true
+          }
+        }
       }
     });
 
+    // 7. Trả kết quả
     return res.status(201).json({
       message: "Register successfully",
-      user: newUser
+      user: {
+        uid: newUser.uid,
+        username: newUser.username,
+        fullname: newUser.fullname,
+        role: newUser.role.rolename,
+        score: newUser.membership.score
+      }
     });
   } catch (error) {
     console.error(error);
@@ -82,16 +106,22 @@ const register = async (req, res) => {
     });
   }
 };
+
+// =========================
+// LOGIN
+// =========================
 const login = async (req, res) => {
   try {
     const { username, password } = req.body;
 
+    // 1. Kiểm tra dữ liệu đầu vào
     if (!username || !password) {
       return res.status(400).json({
         message: "Username and password are required"
       });
     }
 
+    // 2. Tìm user
     const user = await prisma.user.findFirst({
       where: {
         username: username
@@ -104,6 +134,7 @@ const login = async (req, res) => {
       });
     }
 
+    // 3. So sánh password
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
@@ -112,6 +143,7 @@ const login = async (req, res) => {
       });
     }
 
+    // 4. Tạo JWT
     const token = jwt.sign(
       {
         uid: user.uid,
@@ -124,6 +156,7 @@ const login = async (req, res) => {
       }
     );
 
+    // 5. Trả token
     return res.status(200).json({
       message: "Login successfully",
       token: token
