@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: ecommerce-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    image: ecommerce-api:local
+
+    container_name: ecommerce-api
+    restart: unless-stopped
+
+    environment:
+      PORT: ${PORT}
+      DATABASE_URL: ${DATABASE_URL_DOCKER}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+
+    ports:
+      - "3000:3000"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    command: >
+      sh -c "npx prisma migrate deploy && npm start"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres_data:
